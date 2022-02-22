@@ -2,9 +2,7 @@ import os
 import sys
 import re
 import datetime
-import random
 import glob
-import collections
 import numpy
 import imageio
 from functools import partial
@@ -149,6 +147,8 @@ class Panel(wdg.QMainWindow):
         #table widget
         self.table_wdg = wdg.QTableWidget()
         self.table_wdg.setShowGrid(False)
+        #hacemos la tabla de solo lectura
+        self.table_wdg.setEditTriggers(wdg.QTableWidget.NoEditTriggers)
         #self.set_path_btn = wdg.QPushButton("Choose Dir")
         self.table_wdg.setColumnCount(6)
         self.table_wdg.setColumnWidth(0, 256)  #imagen
@@ -294,6 +294,7 @@ class Panel(wdg.QMainWindow):
                                                                             int(start_frame),
                                                                             int(end_frame)))
 
+    #Start Helper Functions#
 
     def set_item_attr(self, item, attr):
         item.setData(self.ATTR_ROLE, attr)
@@ -315,7 +316,7 @@ class Panel(wdg.QMainWindow):
         if pattern.findall(file):
             mo = pattern.search(file)
             frame = mo.group()
-        return frame
+            return frame
 
     def get_last_modified(self, file):
         mod_datetime = os.path.getmtime(file)
@@ -366,11 +367,7 @@ class Panel(wdg.QMainWindow):
         im_fixed.save(jpg_file, "png")
 
 
-# pane = nuke.getPaneFor('Properties.1')
-# panels.registerWidgetAsPanel('SeqExplorer', 'Sequence Explorer', 'uk.co.thefoundry.SeqExplorer', True).addToPane(pane)
-# def start():
-#     start.panel = Panel()
-#     start.panel.show()
+
 app = wdg.QApplication(sys.argv)
 seq_explorer = Panel()
 app.setStyle(wdg.QStyleFactory.create("fusion"))
@@ -387,7 +384,7 @@ dark_palette.setColor(gui.QPalette.Button, gui.QColor(45, 45, 48))
 dark_palette.setColor(gui.QPalette.ButtonText, gui.QColor(208, 208, 208))
 dark_palette.setColor(gui.QPalette.BrightText, core.Qt.red)
 dark_palette.setColor(gui.QPalette.Link, gui.QColor(42, 130, 218))
-dark_palette.setColor(gui.QPalette.Highlight, gui.QColor(42, 130, 218))
+dark_palette.setColor(gui.QPalette.Highlight, gui. QColor(42, 130, 218))
 dark_palette.setColor(gui.QPalette.Highlight, core.Qt.black)
 app.setPalette(dark_palette)
 seq_explorer.show()
