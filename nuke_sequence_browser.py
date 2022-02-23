@@ -114,6 +114,7 @@ class Panel(wdg.QMainWindow):
         self.VALUE_ROLE = core.Qt.UserRole + 1
 
         self.seg_data = {}
+        self.all_data = []
         self.seq_format = 'exr'
 
         self.test_in_progress = False
@@ -227,43 +228,46 @@ class Panel(wdg.QMainWindow):
         if file_path:
             self.filepath_le.setText(file_path)
             self.seg_data = self.get_uniq_seq(self.get_files_of_type( file_path, self.seq_format))
-            self.update_table(self.seg_data)
+            self.all_data = [v for k, v in self.seg_data.items()]
+            self.update_table(self.all_data)
+            self.seg_data = {}
 
 
     def update_table(self, all_data):
+        self.table_wdg.clear()
         self.table_wdg.setRowCount(0)
 
 
         if self.test_in_progress:
             return
 
-        self.progress_bar.setRange(0, len(all_data.keys()))
+        self.progress_bar.setRange(0, len(all_data))
         self.progress_bar.setValue(0)
         self.progress_bar_label.setText("Operation in Progress")
 
         self.test_in_progress = True
         self.update_visibility()
 
-        for i, seq in enumerate(all_data.keys()):
-
+        for i, seq in enumerate(all_data):
+            #seq es un diccionario con el nombre de la secuencia
             if not self.test_in_progress:
                 break
-            self.progress_bar_label.setText("Genering Thumbnails: {0} (of {1})".format(i, len(all_data.keys())))
+            self.progress_bar_label.setText("Genering Thumbnails: {0} (of {1})".format(i, len(all_data)))
             self.progress_bar.setValue(i)
             core.QCoreApplication.processEvents()
 
 
             self.table_wdg.insertRow(i)
-            self.insert_item(i, 1, seq, seq, seq)
-            self.insert_item(i, 2, str(all_data[seq]["num_frames"]), "", "")
-            self.insert_item(i, 3, all_data[seq]["mixing_frames"], "", "")
-            self.insert_item(i, 5, all_data[seq]["mod_time"], "", "")
-            load_button = wdg.QPushButton("LOAD SCENE"), seq
+            self.insert_item(i, 1, seq['name'], "", "")
+            self.insert_item(i, 2, str(seq["num_frames"]), "", "")
+            self.insert_item(i, 3, seq["mixing_frames"], "", "")
+            self.insert_item(i, 5, seq["mod_time"], "", "")
+            load_button = wdg.QPushButton("LOAD SCENE"), seq['name']
             load_button[0].setStyleSheet("background-color:#c47f00; color: black;")
             self.set_load_buttons(i, load_button)
 
             self.table_wdg.setRowHeight(i, 128)
-            self.set_thumbnail_image(i, all_data[seq]["thumbnail"])
+            self.set_thumbnail_image(i, seq["thumbnail"])
 
         self.test_in_progress = False
         self.update_visibility()
@@ -345,6 +349,7 @@ class Panel(wdg.QMainWindow):
             seq_name = full_file_path.stem.rpartition(".")[0]
             if seq_name != "":
                 self.seg_data[seq_name] = self.seg_data.get(seq_name, {})
+                self.seg_data[seq_name]['name'] = seq_name
                 self.seg_data[seq_name]['dir'] = str(self.fix_backslash(full_file_path.parent))
                 self.seg_data[seq_name]['frames'] = self.seg_data[seq_name].get('frames', [])
                 self.seg_data[seq_name]['frames'].append(self.get_frames(file))
@@ -357,9 +362,13 @@ class Panel(wdg.QMainWindow):
                                                                                          self.seg_data[seq_name][
                                                                                              'start_frame']))
                 frame_range = (int(self.seg_data[seq_name]['end_frame']) - int(self.seg_data[seq_name]['start_frame'])) + 1
-                self.seg_data[seq_name]['mixing_frames'] = "Yes" if self.seg_data[seq_name][
-                                                                   'num_frames'] != frame_range else "Not"
+                self.seg_data[seq_name]['mixing_frames'] = "Yes" if self.seg_data[seq_name]['num_frames'] != frame_range else "Not"
+
+
+
         return self.seg_data
+
+
 
 
     def exr_to_jpg(self, exr_file, jpg_file):
@@ -381,17 +390,21 @@ class Panel(wdg.QMainWindow):
     ### Save and Load to DB ###
 
     def seq_to_db(self):
-        nuke_seq_browser_db.save_to_db(self.seg_data)
+        for seq in self.all_data:
+            if not nuke_seq_browser_db.SEQ_COLLECTION.find_one({"name": seq['name']}):
+                nuke_seq_browser_db.save_to_db(seq)
 
     def load_from_db(self):
 
         all_db_seq = [seq for seq in nuke_seq_browser_db.SEQ_COLLECTION.find()]
         #creo un nuevo diccionario sin la clave _id y se lo doy a self.seq_data
         #print(all_db_seq)
+        seq_list = []
         for dict in all_db_seq:
-            self.all_data = {k: dict[k] for k in dict.keys() - {'_id'}}
+            seq_list.append({k: dict[k] for k in dict.keys() - {'_id'}})
+        print()
 
-        self.update_table(self.all_data)
+        self.update_table(seq_list)
 
 
 
