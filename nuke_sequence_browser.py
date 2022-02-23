@@ -12,6 +12,8 @@ from PySide2 import QtGui as gui
 from PySide2 import QtCore as core
 from PySide2 import QtWidgets as wdg
 # import nuke
+
+import nuke_seq_browser_db
 #
 # def get_main_window():
 #     q_app = wdg.QApplication.instance()
@@ -142,6 +144,9 @@ class Panel(wdg.QMainWindow):
 
         self.update_visibility()
 
+        self.save_to_db_btn = wdg.QPushButton("Save to DB")
+        self.load_from_btn = wdg.QPushButton("Load from DB")
+
         #### End Progressbar wdg ####
 
         #table widget
@@ -171,6 +176,10 @@ class Panel(wdg.QMainWindow):
         tag_lyt = wdg.QHBoxLayout()
         tag_lyt.addWidget(self.tag_bar)
 
+        db_btn_lyt = wdg.QHBoxLayout()
+        db_btn_lyt.addWidget(self.save_to_db_btn)
+        db_btn_lyt.addWidget(self.load_from_btn)
+
         #### Start Progressbar wdg ####
         progress_bar_lyt = wdg.QHBoxLayout()
         progress_bar_lyt.addWidget(self.progress_bar_label)
@@ -184,6 +193,7 @@ class Panel(wdg.QMainWindow):
         main_lyt.addLayout(tag_lyt)
         main_lyt.addWidget(self.table_wdg)
         main_lyt.addLayout(progress_bar_lyt)
+        main_lyt.addLayout(db_btn_lyt)
 
         widget = wdg.QWidget()
         widget.setLayout(main_lyt)
@@ -193,6 +203,8 @@ class Panel(wdg.QMainWindow):
     def create_connections(self):
         self.select_file_path.clicked.connect(self.show_selected_file)
         self.search_bar_le.textChanged.connect(self.update_display)
+        self.save_to_db_btn.clicked.connect(self.seq_to_db)
+        self.load_from_btn.clicked.connect(self.load_from_db)
 
     ### progressbar visibility ###
     def update_visibility(self):
@@ -215,12 +227,12 @@ class Panel(wdg.QMainWindow):
         if file_path:
             self.filepath_le.setText(file_path)
             self.seg_data = self.get_uniq_seq(self.get_files_of_type( file_path, self.seq_format))
-            self.update_table()
+            self.update_table(self.seg_data)
 
 
-    def update_table(self):
+    def update_table(self, all_data):
         self.table_wdg.setRowCount(0)
-        all_data = self.seg_data
+
 
         if self.test_in_progress:
             return
@@ -333,7 +345,7 @@ class Panel(wdg.QMainWindow):
             seq_name = full_file_path.stem.rpartition(".")[0]
             if seq_name != "":
                 self.seg_data[seq_name] = self.seg_data.get(seq_name, {})
-                self.seg_data[seq_name]['dir'] = full_file_path.parent
+                self.seg_data[seq_name]['dir'] = str(self.fix_backslash(full_file_path.parent))
                 self.seg_data[seq_name]['frames'] = self.seg_data[seq_name].get('frames', [])
                 self.seg_data[seq_name]['frames'].append(self.get_frames(file))
                 self.seg_data[seq_name]['start_frame'] = self.seg_data[seq_name]['frames'][0]
@@ -365,6 +377,21 @@ class Panel(wdg.QMainWindow):
         im_fixed = Image.fromarray(numpy.uint8(im_gamma_correct * 255))
         im_fixed.thumbnail((256, 256))
         im_fixed.save(jpg_file, "png")
+
+    ### Save and Load to DB ###
+
+    def seq_to_db(self):
+        nuke_seq_browser_db.save_to_db(self.seg_data)
+
+    def load_from_db(self):
+
+        all_db_seq = [seq for seq in nuke_seq_browser_db.SEQ_COLLECTION.find()]
+        #creo un nuevo diccionario sin la clave _id y se lo doy a self.seq_data
+        #print(all_db_seq)
+        for dict in all_db_seq:
+            self.all_data = {k: dict[k] for k in dict.keys() - {'_id'}}
+
+        self.update_table(self.all_data)
 
 
 
