@@ -3,8 +3,13 @@ import sys
 import re
 import datetime
 import glob
+from io import BytesIO
+
 import numpy
 import imageio
+import pymongo
+import base64
+from bson.binary import Binary
 from functools import partial
 from PIL import Image
 from pathlib import Path
@@ -13,13 +18,14 @@ from PySide2 import QtCore as core
 from PySide2 import QtWidgets as wdg
 # import nuke
 
-import nuke_seq_browser_db
+
 #
 # def get_main_window():
 #     q_app = wdg.QApplication.instance()
 #     for widget in q_app.topLevelWidgets():
 #         if widget.metaObject().className() == "Foundry::UI::DockMainWindow":
 #             return widget
+
 #todo implement my custom mousePressEvent
 class MyQFrame(wdg.QLabel):
     clicked = core.Signal(str)
@@ -113,9 +119,15 @@ class Panel(wdg.QMainWindow):
         self.ATTR_ROLE = core.Qt.UserRole
         self.VALUE_ROLE = core.Qt.UserRole + 1
 
+        self.init_sb()
+
         self.seg_data = {}
         self.all_data = []
         self.seq_format = 'exr'
+
+        #all seq in db
+        self.all_db_seq = [seq['name'] for seq in self.SEQ_COLLECTION.find({}, {"name": 1, "_id": 0})]
+
 
         self.test_in_progress = False
 
@@ -217,10 +229,14 @@ class Panel(wdg.QMainWindow):
         for row in range(self.table_wdg.rowCount()):
             item = self.table_wdg.item(row, column)
             if item:
-                if not text.lower() in item.text():
-                    self.table_wdg.setRowHidden(row,True)
-                else:
+                # if not text.lower() in item.text():
+                #     self.table_wdg.setRowHidden(row,True)
+                # else:
+                #     self.table_wdg.setRowHidden(row, False)
+                if item.text().lower().startswith(text.lower()):
                     self.table_wdg.setRowHidden(row, False)
+                else:
+                    self.table_wdg.setRowHidden(row, True)
 
 
     def show_selected_file(self):
@@ -236,7 +252,7 @@ class Panel(wdg.QMainWindow):
     def update_table(self, all_data):
         self.table_wdg.clear()
         self.table_wdg.setRowCount(0)
-
+        #all_data is a list of dict, each dict with name, etc..
 
         if self.test_in_progress:
             return
@@ -249,7 +265,19 @@ class Panel(wdg.QMainWindow):
         self.update_visibility()
 
         for i, seq in enumerate(all_data):
-            #seq es un diccionario con el nombre de la secuencia
+            #seq es un diccionario con el nombre de la secuencia, frames ,y resto de campos
+            #todo si el seq['name'] esta en la db entonces seq es igual al seq de la db
+
+            if seq['name'] in self.all_db_seq:
+                seq = self.SEQ_COLLECTION.find_one({"name": seq['name']})
+                img = seq["thumbnail"].rpartition(".")[0] + ".png"
+                thumbnail_img = self.bin_to_img(img, seq['img_bin'])
+                seq["thumbnail"] = thumbnail_img
+
+
+            #todo decodificar la imagen y poner la como thumbnail
+
+
             if not self.test_in_progress:
                 break
             self.progress_bar_label.setText("Genering Thumbnails: {0} (of {1})".format(i, len(all_data)))
@@ -267,7 +295,10 @@ class Panel(wdg.QMainWindow):
             self.set_load_buttons(i, load_button)
 
             self.table_wdg.setRowHeight(i, 128)
-            self.set_thumbnail_image(i, seq["thumbnail"])
+            if seq["thumbnail"].endswith('.exr'):
+                self.set_thumbnail_image(i, seq["thumbnail"])
+            else:
+                self.create_thumbnail_widget(i, seq["thumbnail"])
 
         self.test_in_progress = False
         self.update_visibility()
@@ -286,8 +317,11 @@ class Panel(wdg.QMainWindow):
         destiny = source_image.rpartition(".")[0] + ".png"
         if not os.path.exists(destiny):
             self.exr_to_jpg(source_image, destiny)
+        self.create_thumbnail_widget(i, destiny)
 
-        pic = gui.QPixmap(destiny)
+    def create_thumbnail_widget(self, i, thumb_image):
+
+        pic = gui.QPixmap(thumb_image)
         self.thumbnail_label = wdg.QLabel("")
         self.thumbnail_label.setScaledContents(True)
         self.thumbnail_label.setPixmap(pic)
@@ -364,12 +398,7 @@ class Panel(wdg.QMainWindow):
                 frame_range = (int(self.seg_data[seq_name]['end_frame']) - int(self.seg_data[seq_name]['start_frame'])) + 1
                 self.seg_data[seq_name]['mixing_frames'] = "Yes" if self.seg_data[seq_name]['num_frames'] != frame_range else "Not"
 
-
-
         return self.seg_data
-
-
-
 
     def exr_to_jpg(self, exr_file, jpg_file):
         if not os.path.isfile(exr_file):
@@ -389,22 +418,60 @@ class Panel(wdg.QMainWindow):
 
     ### Save and Load to DB ###
 
+    def init_sb(self):
+        # DB conexion data
+        SERVER = pymongo.MongoClient('mongodb://127.0.0.1:27017/')
+        DB = SERVER["SEQ_DB"]
+        # creamos dos collections en la base de datos clipboard userCollections y clipboardCollections
+        self.SEQ_COLLECTION = DB['sequences']
+
+    # def convert_img_to_bin(self, img):
+    #
+    #     im = Image.open(img)
+    #     imgByteArr = io.BytesIO()
+    #     im.save(imgByteArr, format='PNG')
+    #     image = {"img_bin": imgByteArr.getvalue()}
+    #     return image
+
+    def convert_img_to_bin(self, img):
+
+        with open(img, "rb") as imageFile:
+            img_bin = base64.b64encode(imageFile.read())
+        return img_bin
+
+    def bin_to_img(self, img, bin_image):
+        # with open(img, "wb") as fimage:
+        #     fimage.write(bin_image.decode('utf-8'))
+        im = Image.open(BytesIO(base64.b64decode(bin_image)))
+        im.save(img, 'PNG')
+        return img
+
+    # from PIL import Image
+    # from bson import Binary
+    #
+    # img = Image.open('test.jpg')
+    #
+    # imgByteArr = io.BytesIO()
+    # img.save(imgByteArr, format='PNG')
+    # imgByteArr = imgByteArr.getvalue()
     def seq_to_db(self):
         for seq in self.all_data:
-            if not nuke_seq_browser_db.SEQ_COLLECTION.find_one({"name": seq['name']}):
-                nuke_seq_browser_db.save_to_db(seq)
+            if not self.SEQ_COLLECTION.find_one({"name": seq['name']}):
+                # self.save_to_db(seq)
+                self.SEQ_COLLECTION.insert_one(seq)
+        self.update_seq_with_thumb()
+
+    def update_seq_with_thumb(self):
+        for seq in self.all_data:
+            thumb_png = seq["thumbnail"].rpartition(".")[0] + ".png"
+            image_data = self.convert_img_to_bin(thumb_png)
+            # print(self.SEQ_COLLECTION.find())
+            self.SEQ_COLLECTION.find_one_and_update({"name": seq['name']}, {"$set": {"img_bin": image_data}}, upsert=True)
 
     def load_from_db(self):
 
-        all_db_seq = [seq for seq in nuke_seq_browser_db.SEQ_COLLECTION.find()]
-        #creo un nuevo diccionario sin la clave _id y se lo doy a self.seq_data
-        #print(all_db_seq)
-        seq_list = []
-        for dict in all_db_seq:
-            seq_list.append({k: dict[k] for k in dict.keys() - {'_id'}})
-        print()
-
-        self.update_table(seq_list)
+        all_db_seq = [seq for seq in self.SEQ_COLLECTION.find({}, {"_id": 0})]
+        self.update_table(all_db_seq) #list of dict with sequence data
 
 
 
