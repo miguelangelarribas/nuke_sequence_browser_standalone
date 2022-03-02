@@ -168,6 +168,7 @@ class Panel(wdg.QMainWindow):
         #hacemos la tabla de solo lectura
         self.table_wdg.setEditTriggers(wdg.QTableWidget.NoEditTriggers)
         #self.set_path_btn = wdg.QPushButton("Choose Dir")
+        self.table_wdg.setSelectionBehavior(wdg.QTableView.SelectRows)
         self.table_wdg.setColumnCount(6)
         self.table_wdg.setColumnWidth(0, 256)  #imagen
         self.table_wdg.setColumnWidth(1, 200) #seqname
@@ -179,7 +180,15 @@ class Panel(wdg.QMainWindow):
         header_view = self.table_wdg.horizontalHeader()
         header_view.setSectionResizeMode(1, wdg.QHeaderView.Stretch)
 
+        #right panel widgets
+        self.property_img_lbl = wdg.QLabel("")
+        self.seq_name_lbl = wdg.QLabel("Sequence Name")
+        self.tags_lbl = wdg.QLabel("Tags")
+        self.tags_wdg = wdg.QWidget()
+
     def create_layout(self):
+
+        #left Panel Layout
         buttons_lyt = wdg.QHBoxLayout()
         buttons_lyt.addWidget(self.search_bar_lbl)
         buttons_lyt.addWidget(self.search_bar_le)
@@ -208,9 +217,35 @@ class Panel(wdg.QMainWindow):
         main_lyt.addLayout(progress_bar_lyt)
         main_lyt.addLayout(db_btn_lyt)
 
-        widget = wdg.QWidget()
-        widget.setLayout(main_lyt)
+        #splitter need a widget so create a widget and set layout to main_lyt
+        left_panel_wdg = wdg.QWidget()
+        left_panel_wdg.setLayout(main_lyt)
 
+        #right panel layout
+        properties_lyt = wdg.QVBoxLayout()
+        properties_lyt.addWidget(self.property_img_lbl)
+        properties_lyt.addWidget(self.seq_name_lbl)
+        properties_lyt.addWidget(self.tags_lbl)
+        self.tags_lyt = wdg.QHBoxLayout()
+        self.tags_lyt.setAlignment(core.Qt.AlignTop)
+        properties_lyt.addLayout(self.tags_lyt)
+
+
+
+        right_panel_wdg = wdg.QWidget()
+        right_panel_wdg.setLayout(properties_lyt)
+
+        #splitter creation with two panels
+        splitter = wdg.QSplitter(core.Qt.Horizontal)
+        splitter.addWidget(left_panel_wdg)
+        splitter.addWidget(right_panel_wdg)
+        splitter.setSizes([800,200])
+
+        main_hzt_lyt = wdg.QHBoxLayout()
+        main_hzt_lyt.addWidget(splitter)
+
+        widget = wdg.QWidget()
+        widget.setLayout(main_hzt_lyt)
         self.setCentralWidget(widget)
 
     def create_connections(self):
@@ -218,6 +253,31 @@ class Panel(wdg.QMainWindow):
         self.search_bar_le.textChanged.connect(self.update_display)
         self.save_to_db_btn.clicked.connect(self.seq_to_db)
         self.load_from_btn.clicked.connect(self.load_from_db)
+        self.table_wdg.selectionModel().currentRowChanged.connect(self.on_selectionChanged)
+
+    def on_selectionChanged(self, select):
+
+        current_sel_row = select.row()
+        selected_sequence = self.table_wdg.item(current_sel_row , 1).text()
+        self.seq_name_lbl.setText(selected_sequence)
+        current_item = self.table_wdg.item(current_sel_row , 1)
+        tag_list = self.get_item_attr(current_item)
+
+        self.clear_layout(self.tags_lyt)
+        for tag in tag_list:
+            tag_btn = wdg.QPushButton(tag)
+            self.tags_lyt.addWidget(tag_btn)
+
+    def clear_layout(self, layout):
+        '''
+        get a layout iterate for his child and while get child and delt
+        :param layout: layout to delete widgets
+        :return:
+        '''
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
 
     ### progressbar visibility ###
     def update_visibility(self):
@@ -266,17 +326,11 @@ class Panel(wdg.QMainWindow):
 
         for i, seq in enumerate(all_data):
             #seq es un diccionario con el nombre de la secuencia, frames ,y resto de campos
-            #todo si el seq['name'] esta en la db entonces seq es igual al seq de la db
-
             if seq['name'] in self.all_db_seq:
                 seq = self.SEQ_COLLECTION.find_one({"name": seq['name']})
                 img = seq["thumbnail"].rpartition(".")[0] + ".png"
                 thumbnail_img = self.bin_to_img(img, seq['img_bin'])
                 seq["thumbnail"] = thumbnail_img
-
-
-            #todo decodificar la imagen y poner la como thumbnail
-
 
             if not self.test_in_progress:
                 break
@@ -286,7 +340,8 @@ class Panel(wdg.QMainWindow):
 
 
             self.table_wdg.insertRow(i)
-            self.insert_item(i, 1, seq['name'], "", "")
+            # self.insert_item(i, 1, seq['name'], "", "")
+            self.insert_item(i, 1, seq['name'], ["see","stranger_thigns", "Otros"], "")
             self.insert_item(i, 2, str(seq["num_frames"]), "", "")
             self.insert_item(i, 3, seq["mixing_frames"], "", "")
             self.insert_item(i, 5, seq["mod_time"], "", "")
@@ -354,6 +409,9 @@ class Panel(wdg.QMainWindow):
 
     def get_item_value(self, item):
         return item.data(self.VALUE_ROLE)
+
+    def get_item_attr(self, item):
+        return item.data(self.ATTR_ROLE)
 
 
     def get_files_of_type(self, destinationDir, fileType):
